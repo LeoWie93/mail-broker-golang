@@ -1,0 +1,11 @@
+{{ define "header" }}
+{{ template "redHeader.html" }}
+{{end}}
+
+{{ define "content" }}
+<p>Content start</p>
+
+{{ .Body }}
+
+<p>Content end</p>
+{{ end }}
