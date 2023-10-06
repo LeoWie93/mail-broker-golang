@@ -5,35 +5,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"leowie93/go-mail-broker/internal/dialer"
+	"leowie93/go-mail-broker/internal/options"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 	"gopkg.in/gomail.v2"
 )
 
+var smtpDialer *gomail.Dialer
+
 type MailPost struct {
 	Action string
 	To     string
-	Body   string
-}
-
-type Options struct {
-	Template string
-}
-
-var optionsMap = map[string]*Options{
-	"v1": &Options{Template: "v1.html"},
-	"v2": &Options{Template: "v2.html"},
-}
-
-func exchangeAction(action string) (options *Options, err error) {
-	if options, ok := optionsMap[action]; ok {
-		return options, nil
-	}
-
-	return nil, fmt.Errorf("Given action is not valid: %s", action)
+	Body   template.HTML
 }
 
 func handlePostMail(w http.ResponseWriter, r *http.Request) {
@@ -42,39 +29,30 @@ func handlePostMail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//unmarshall post
-	decoder := json.NewDecoder(r.Body)
+	// unmarshall post body
 	var mailPost MailPost
-	err := decoder.Decode(&mailPost)
+	err := json.NewDecoder(r.Body).Decode(&mailPost)
 	if err != nil {
 		http.Error(w, "Invalid params", http.StatusUnprocessableEntity)
 		return
 	}
 
-	//exchange action for options
-	options, err := exchangeAction(mailPost.Action)
+	options, err := options.ExchangeAction(mailPost.Action)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
 
-	//TODO parse folders and subfiles
-	tmpl := template.Must(template.ParseFiles(
-		"./templates/components/base.html",
-		"./templates/components/redHeader.html",
-		"./templates/components/blueHeader.html",
-		"./templates/"+options.Template))
+	tmpl := template.Must(template.ParseGlob("./templates/components/*"))
+	tmpl, _ = tmpl.ParseFiles("./templates/" + options.Template)
 
-	//TODO when include the .Body into a definition. The html tags are parsed out. Why?
 	var buf bytes.Buffer
 	tmpl.Execute(&buf, mailPost)
 
-	//for debuggin
-	s := buf.String()
+	bodyString := buf.String()
 	fmt.Println("the body: ")
-	fmt.Println(s)
+	fmt.Println(bodyString)
 
-	// create Mail
 	m := gomail.NewMessage()
 	from := "noreply@h2g.ch"
 
@@ -82,23 +60,27 @@ func handlePostMail(w http.ResponseWriter, r *http.Request) {
 	m.SetHeader("To", mailPost.To)
 	m.SetHeader("Subject", "Todo define subject by action")
 
-	m.SetBody("text/html", s)
+	m.SetBody("text/html", bodyString)
 
-	// send mail
-	if err := dialer.Dialer.DialAndSend(m); err != nil {
-		panic(err)
-	}
+	// if err := smtpDialer.DialAndSend(m); err != nil {
+	// 	panic(err)
+	// }
 
 	w.WriteHeader(http.StatusOK)
 }
 
-// TODO is a init function usefull in this case?
 func main() {
+
+	//TODO implement my own .env parser
 	if err := godotenv.Load(".env.local"); err != nil {
 		panic(err)
 	}
 
-	dialer.InitDialer()
+	port, err := strconv.Atoi(os.Getenv("SMTP_PORT"))
+	if err != nil {
+		panic(err)
+	}
+	smtpDialer = gomail.NewDialer(os.Getenv("SMTP_HOST"), port, os.Getenv("SMTP_USERNAME"), os.Getenv("SMTP_PASSWORD"))
 
 	http.HandleFunc("/email-broker", handlePostMail)
 
