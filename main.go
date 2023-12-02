@@ -49,12 +49,13 @@ func handlePostMail(w http.ResponseWriter, r *http.Request) {
 	var buf bytes.Buffer
 	tmpl.Execute(&buf, mailPost)
 
+	//TODO debug code
 	bodyString := buf.String()
 	fmt.Println("the body: ")
 	fmt.Println(bodyString)
 
 	m := gomail.NewMessage()
-	from := "noreply@h2g.ch"
+	from := "noreply@codingforest.ch"
 
 	m.SetHeader("From", from)
 	m.SetHeader("To", mailPost.To)
@@ -62,9 +63,9 @@ func handlePostMail(w http.ResponseWriter, r *http.Request) {
 
 	m.SetBody("text/html", bodyString)
 
-	// if err := smtpDialer.DialAndSend(m); err != nil {
-	// 	panic(err)
-	// }
+	if err := smtpDialer.DialAndSend(m); err != nil {
+		panic(err)
+	}
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -82,8 +83,11 @@ func main() {
 	}
 	smtpDialer = gomail.NewDialer(os.Getenv("SMTP_HOST"), port, os.Getenv("SMTP_USERNAME"), os.Getenv("SMTP_PASSWORD"))
 
-	http.HandleFunc("/email-broker", handlePostMail)
+	mux := http.NewServeMux()
+
+	postMailHandler := http.HandlerFunc(handlePostMail)
+	mux.Handle("/email-broker", postMailHandler)
 
 	fmt.Println("Server starting on port :8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(":8080", mux))
 }
